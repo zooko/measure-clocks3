@@ -51,11 +51,11 @@ for (k, v) in d.items():
     # print("--- k: %r, v: %r" % (k, v,))
     s = ""
     for v in lis:
-        s += format(f" {v[0]:6d}{v[1]}")
+        s += format(f" {v[0]:7d}{v[1]}")
         if v[1] == " *":
             winners += 1
 
-    s = format(f"{k:48s}: #winners: {winners:3d}; ") + s
+    s = format(f"{k:55s}: #winners: {winners:3d}; ") + s
     print(s)
        
 

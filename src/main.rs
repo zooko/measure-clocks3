@@ -241,9 +241,13 @@ pub mod plat_apple {
     
 #[cfg(target_vendor = "apple")]
 type ClockType = u32;
+#[cfg(target_vendor = "apple")]
+type TvUsecType = i32;
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 type ClockType = i32;
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+type TvUsecType = i64;
 
 use std::time::Duration;
 use std::thread::sleep;
@@ -271,7 +275,7 @@ pub mod plat_unixes {
     pub extern crate libc;
     use std::io::Error;
     use std::mem::MaybeUninit;
-    use crate::{ClockType, D, Instant, sleep, black_box, dummy_func};
+    use crate::{ClockType, D, Instant, sleep, black_box, dummy_func, TvUsecType};
 
     /// Returns the number of this clock's nanoseconds per Instant::now() nanoseconds, in (numer,
     /// denomer) format. Sleeps for about a millisecond in order to calibrate.
@@ -354,7 +358,7 @@ pub mod plat_unixes {
     }
 
     pub fn set_system_time(nanos_since_epoch: u64) {
-        let tv = timeval { tv_sec: nanos_since_epoch as i64 / 1_000_000_000, tv_usec: (nanos_since_epoch / 1000) as i64 };
+        let tv = timeval { tv_sec: nanos_since_epoch as i64 / 1_000_000_000, tv_usec: (nanos_since_epoch / 1000) as TvUsecType };
         
         unsafe {
             if settimeofday(&tv as *const timeval, std::ptr::null()) != 0 {
@@ -611,7 +615,7 @@ fn main() {
 #[cfg(target_vendor = "apple")]
     {
         // use crate::plat_unixes::{libc_gettime_clock, libc_gettime_clock_calibrate, libc};
-        use crate::plat_unixes::libc;
+        use crate::plat_unixes::{libc, libc_gettime_clock, libc_gettime_clock_calibrate};
         add_wrapped_fn!(fns, plat_apple::mach_absolute_time_ticks, plat_apple::mach_absolute_time_ticks_calibrate, None, true);
         add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_UPTIME_RAW), false);
         add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_UPTIME_RAW_APPROX), false);
