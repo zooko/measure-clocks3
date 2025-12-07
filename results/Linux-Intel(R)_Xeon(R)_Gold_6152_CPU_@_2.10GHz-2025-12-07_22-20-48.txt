@@ -1,0 +1,10 @@
+./target/release/measure-clocks 
+                                fnname                 clock      nsamples     min  perc50        mean     perc95               max        stddev      drift
+                                ------                 -----      --------     ---  ------        ----     ------               ---        ------      -----
+                    libc_gettime_clock              REALTIME       100,000   6,151   6,503       6,511      7,588            36,568           891   0.999739
+                    libc_gettime_clock         MONOTONIC_RAW       100,000   6,694   6,696       6,826      7,344            26,367           646   0.999677
+                   plat_x86_64::rdtscp                  None       100,000   6,688   6,690       6,882      8,771            27,539           705        ---
+                    libc_gettime_clock             MONOTONIC       100,000   6,503   6,695       7,003      8,791            25,938           854   0.999894
+                               instant                  None       100,000   6,504   6,698       7,197      8,803            27,005           984   0.999741
+                    libc_gettime_clock        THREAD_CPUTIME       100,000   6,871   7,484       7,516      7,778            26,520           600   0.010805
+                    libc_gettime_clock       PROCESS_CPUTIME       100,000   6,900  15,855      45,980     28,207         5,084,365       387,079   0.366789

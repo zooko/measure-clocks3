@@ -354,7 +354,7 @@ pub mod plat_unixes {
     }
 
     pub fn set_system_time(nanos_since_epoch: u64) {
-        let tv = timeval { tv_sec: nanos_since_epoch as i64 / 1_000_000_000, tv_usec: nanos_since_epoch as i32 / 1000 };
+        let tv = timeval { tv_sec: nanos_since_epoch as i64 / 1_000_000_000, tv_usec: (nanos_since_epoch / 1000) as i64 };
         
         unsafe {
             if settimeofday(&tv as *const timeval, std::ptr::null()) != 0 {
@@ -366,9 +366,9 @@ pub mod plat_unixes {
     }
 
     /// Returns nanoseconds
-    pub fn get_monotonic_raw_approx() -> u64 {
+    pub fn get_monotonic_raw() -> u64 {
         let mut tp: MaybeUninit<libc::timespec> = MaybeUninit::uninit();
-        let retval = unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC_RAW_APPROX, tp.as_mut_ptr()) };
+        let retval = unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC_RAW, tp.as_mut_ptr()) };
         assert_eq!(retval, 0);
         unsafe { (*tp.as_ptr()).tv_sec as u64 * 1_000_000_000 + (*tp.as_ptr()).tv_nsec as u64 }
     }
@@ -567,8 +567,8 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 
 #[cfg(unix)]
-fn get_monotonic_raw_approx() -> u64 {
-    plat_unixes::get_monotonic_raw_approx()
+fn get_monotonic_raw() -> u64 {
+    plat_unixes::get_monotonic_raw()
 }
 
 #[cfg(unix)]
@@ -578,7 +578,7 @@ fn set_system_time(nanos: u64) {
 
 fn jump_clock_ahead_thread(should_exit: Arc<AtomicBool>) {
     let start_syst = get_system_time();
-    let start_mont = get_monotonic_raw_approx();
+    let start_mont = get_monotonic_raw();
 
     sleep(D);
 
@@ -587,7 +587,7 @@ fn jump_clock_ahead_thread(should_exit: Arc<AtomicBool>) {
     }
 
     // Set system time back to where it "ought" to be.
-    let stop_mont = get_monotonic_raw_approx();
+    let stop_mont = get_monotonic_raw();
     let new_syst = start_syst + stop_mont - start_mont;
     set_system_time(new_syst);
 }
@@ -605,9 +605,6 @@ fn main() {
     add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_REALTIME), false);
     add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_MONOTONIC), false);
     add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_MONOTONIC_RAW), false);
-    add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_MONOTONIC_RAW_APPROX), false);
-    add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_UPTIME_RAW), false);
-    add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_UPTIME_RAW_APPROX), false);
     add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_PROCESS_CPUTIME_ID), false);
     add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_THREAD_CPUTIME_ID), false);
     }
@@ -616,7 +613,9 @@ fn main() {
         // use crate::plat_unixes::{libc_gettime_clock, libc_gettime_clock_calibrate, libc};
         use crate::plat_unixes::libc;
         add_wrapped_fn!(fns, plat_apple::mach_absolute_time_ticks, plat_apple::mach_absolute_time_ticks_calibrate, None, true);
-        //add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_UPTIME_RAW), false);
+        add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_UPTIME_RAW), false);
+        add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_UPTIME_RAW_APPROX), false);
+        add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_MONOTONIC_RAW_APPROX), false);
         add_wrapped_fn!(fns, plat_apple::gettime_nsec_np_clock, plat_apple::gettime_nsec_np_clock_calibrate, Some(libc::CLOCK_REALTIME), false);
         add_wrapped_fn!(fns, plat_apple::gettime_nsec_np_clock, plat_apple::gettime_nsec_np_clock_calibrate, Some(libc::CLOCK_MONOTONIC), false);
         add_wrapped_fn!(fns, plat_apple::gettime_nsec_np_clock, plat_apple::gettime_nsec_np_clock_calibrate, Some(libc::CLOCK_MONOTONIC_RAW), false);
