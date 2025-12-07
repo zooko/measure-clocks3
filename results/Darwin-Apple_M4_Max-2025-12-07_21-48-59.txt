@@ -1,0 +1,21 @@
+./target/release/measure-clocks 
+                                fnname                 clock      nsamples     min  perc50        mean     perc95               max        stddev      drift
+                                ------                 -----      --------     ---  ------        ----     ------               ---        ------      -----
+                    libc_gettime_clock  MONOTONIC_RAW_APPROX         2,193     208   8,916     150,532    688,000        10,883,417       422,875   0.999384
+                    libc_gettime_clock            UPTIME_RAW       100,000   1,208   1,292       3,285      6,084         9,597,875        51,891   0.999971
+                    libc_gettime_clock         MONOTONIC_RAW       100,000   1,208   1,333       3,318      6,125         7,677,416        42,081   0.999934
+     plat_apple::gettime_nsec_np_clock         MONOTONIC_RAW       100,000   1,208   1,375       3,391      6,125         8,288,750        39,246   0.999971
+     plat_apple::gettime_nsec_np_clock            UPTIME_RAW       100,000   1,208   1,416       3,440      6,084        10,181,500        60,836   0.999971
+     plat_apple::gettime_nsec_np_clock             MONOTONIC       100,000   1,000   1,000       3,468      6,000         9,817,000        49,984   0.999031
+     plat_apple::gettime_nsec_np_clock     UPTIME_RAW_APPROX         2,861     333   9,709     123,459    606,041        10,058,917       378,271   0.993767
+     plat_apple::gettime_nsec_np_clock              REALTIME       100,000   1,000   1,000       3,515      6,000        16,621,000        61,163   0.999781
+                    libc_gettime_clock              REALTIME       100,000   1,000   1,000       3,547      6,000         8,537,000        52,736   1.000161
+     plat_apple::gettime_nsec_np_clock  MONOTONIC_RAW_APPROX         3,430     292   8,500     106,190    534,625        10,224,792       363,619   0.999765
+                    libc_gettime_clock             MONOTONIC       100,000   1,000   1,000       3,637      6,000        20,299,000        78,489   0.999754
+  plat_apple::mach_absolute_time_ticks                  None       100,000   1,167   1,417       3,682      8,461         7,989,244        45,383        ---
+                    libc_gettime_clock        THREAD_CPUTIME       100,000   1,208   1,541       3,079      6,458           490,750        16,027   0.002627
+                               instant                  None       100,000   1,208   1,292       3,701      8,458         8,144,750        49,927   0.999905
+     plat_apple::gettime_nsec_np_clock        THREAD_CPUTIME       100,000   1,166   1,542       3,265      6,500           469,209        15,506   0.015808
+                    libc_gettime_clock     UPTIME_RAW_APPROX         3,841     208   8,625      99,910    520,125         7,940,417       304,378   0.998771
+                    libc_gettime_clock       PROCESS_CPUTIME       100,000   1,000   5,000      50,928     28,000        87,234,000       756,130   0.127069
+     plat_apple::gettime_nsec_np_clock       PROCESS_CPUTIME       100,000   1,000   5,000      49,632     29,000       101,441,000       711,207   3.984927
