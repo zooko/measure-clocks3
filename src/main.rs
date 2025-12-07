@@ -183,7 +183,7 @@ pub mod plat_apple {
         durations
     }
 
-    use mach_sys::mach_time::{mach_absolute_time};
+    use mach_sys::mach_time::mach_absolute_time;
     use std::time::Instant;
     use std::thread::sleep;
 
@@ -339,10 +339,10 @@ pub mod plat_unixes {
 	durations
     }
 
-    pub fn increment_system_time() {
-        use libc::{gettimeofday, settimeofday, timeval};
+    use libc::{gettimeofday, settimeofday, timeval};
 
-        // Read current time
+    /// Returns nanoseconds since epoch
+    pub fn get_system_time() -> u64 {
         let mut tv = timeval { tv_sec: 0, tv_usec: 0 };
         unsafe {
             if gettimeofday(&mut tv as *mut timeval, std::ptr::null_mut()) != 0 {
@@ -350,17 +350,31 @@ pub mod plat_unixes {
             }
         }
 
-        //eprintln!("gtod: {} {}", tv.tv_sec, tv.tv_usec);
-        tv.tv_sec += 1;
+        (tv.tv_sec * 1_000_000_000 + tv.tv_usec as i64 * 1000) as u64
+    }
 
-        // Set new time
+    pub fn set_system_time(nanos_since_epoch: u64) {
+        let tv = timeval { tv_sec: nanos_since_epoch as i64 / 1_000_000_000, tv_usec: nanos_since_epoch as i32 / 1000 };
+        
         unsafe {
             if settimeofday(&tv as *const timeval, std::ptr::null()) != 0 {
-                eprintln!("You have to give this process super-user/admin privs for it to be able to set (jump) the system clock.");
+                eprintln!("You have to give this process super-user/admin privs for it to be able to set the system clock.");
                 eprintln!("{}", Error::last_os_error());
                 panic!();
             }
         }
+    }
+
+    /// Returns nanoseconds
+    pub fn get_monotonic_raw_approx() -> u64 {
+        let mut tp: MaybeUninit<libc::timespec> = MaybeUninit::uninit();
+        let retval = unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC_RAW_APPROX, tp.as_mut_ptr()) };
+        assert_eq!(retval, 0);
+        unsafe { (*tp.as_ptr()).tv_sec as u64 * 1_000_000_000 + (*tp.as_ptr()).tv_nsec as u64 }
+    }
+
+    pub fn increment_system_time() {
+        set_system_time(get_system_time() + 1_000_000_000);
     }
 }
 
@@ -419,6 +433,11 @@ fn jump_clock_forward_1_sec() {
 #[cfg(windows)]
 fn jump_clock_forward_1_sec() {
     plat_windows::increment_system_time()
+}
+
+#[cfg(unix)]
+fn get_system_time() -> u64 {
+    plat_unixes::get_system_time()
 }
 
 fn stats<F, G>(func: F, calibrate: G, clock: Option<ClockType>, fnname: &str, clockname: &str, scale: bool)
@@ -496,10 +515,10 @@ where
     let stddev = (sumsquares / (numsamples - 1) as f64).sqrt();
 
     if scale {
-        println!("{fnname:>38} {clockname:>14} {:>12} {:>7} {:>7} {:>11} {:>7} {:>14} {:>11} {:>12}", numsamples.separate_with_commas(), min.separate_with_commas(), perc50.separate_with_commas(), mean.separate_with_commas(), perc95.separate_with_commas(), max.separate_with_commas(), (stddev as u128).separate_with_commas(), "---");
+        println!("{fnname:>38} {clockname:>21} {:>13} {:>7} {:>7} {:>11} {:>10} {:>17} {:>13} {:>10}", numsamples.separate_with_commas(), min.separate_with_commas(), perc50.separate_with_commas(), mean.separate_with_commas(), perc95.separate_with_commas(), max.separate_with_commas(), (stddev as u128).separate_with_commas(), "---");
     } else {
         let drift = numer as f64 / denomer as f64;
-        println!("{fnname:>38} {clockname:>14} {:>12} {:>7} {:>7} {:>11} {:>7} {:>14} {:>11} {:>12.6}", numsamples.separate_with_commas(), min.separate_with_commas(), perc50.separate_with_commas(), mean.separate_with_commas(), perc95.separate_with_commas(), max.separate_with_commas(), (stddev as u128).separate_with_commas(), drift);
+        println!("{fnname:>38} {clockname:>21} {:>13} {:>7} {:>7} {:>11} {:>10} {:>17} {:>13} {:>10.6}", numsamples.separate_with_commas(), min.separate_with_commas(), perc50.separate_with_commas(), mean.separate_with_commas(), perc95.separate_with_commas(), max.separate_with_commas(), (stddev as u128).separate_with_commas(), drift);
     }
 
 }
@@ -544,12 +563,33 @@ fn get_iters() -> u64 {
     DEFAULT_ITERS
 }
 
-fn jump_clock_ahead_thread() {
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
+
+#[cfg(unix)]
+fn get_monotonic_raw_approx() -> u64 {
+    plat_unixes::get_monotonic_raw_approx()
+}
+
+#[cfg(unix)]
+fn set_system_time(nanos: u64) {
+    plat_unixes::set_system_time(nanos)
+}
+
+fn jump_clock_ahead_thread(should_exit: Arc<AtomicBool>) {
+    let start_syst = get_system_time();
+    let start_mont = get_monotonic_raw_approx();
+
     sleep(D);
 
-    loop {
+    while !should_exit.load(Ordering::Relaxed) {
         jump_clock_forward_1_sec();
     }
+
+    // Set system time back to where it "ought" to be.
+    let stop_mont = get_monotonic_raw_approx();
+    let new_syst = start_syst + stop_mont - start_mont;
+    set_system_time(new_syst);
 }
 
 use std::env;
@@ -562,20 +602,29 @@ fn main() {
 #[cfg(unix)]
     {
     use crate::plat_unixes::{libc, libc_gettime_clock, libc_gettime_clock_calibrate};
-    add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_THREAD_CPUTIME_ID), false);
-    add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_MONOTONIC), false);
     add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_REALTIME), false);
+    add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_MONOTONIC), false);
     add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_MONOTONIC_RAW), false);
+    add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_MONOTONIC_RAW_APPROX), false);
+    add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_UPTIME_RAW), false);
+    add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_UPTIME_RAW_APPROX), false);
+    add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_PROCESS_CPUTIME_ID), false);
+    add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_THREAD_CPUTIME_ID), false);
     }
 #[cfg(target_vendor = "apple")]
     {
-        use crate::plat_unixes::{libc_gettime_clock, libc_gettime_clock_calibrate, libc};
+        // use crate::plat_unixes::{libc_gettime_clock, libc_gettime_clock_calibrate, libc};
+        use crate::plat_unixes::libc;
         add_wrapped_fn!(fns, plat_apple::mach_absolute_time_ticks, plat_apple::mach_absolute_time_ticks_calibrate, None, true);
-        add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_UPTIME_RAW), false);
-        add_wrapped_fn!(fns, plat_apple::gettime_nsec_np_clock, plat_apple::gettime_nsec_np_clock_calibrate, Some(libc::CLOCK_UPTIME_RAW), false);
-        add_wrapped_fn!(fns, plat_apple::gettime_nsec_np_clock, plat_apple::gettime_nsec_np_clock_calibrate, Some(libc::CLOCK_THREAD_CPUTIME_ID), false);
+        //add_wrapped_fn!(fns, libc_gettime_clock, libc_gettime_clock_calibrate, Some(libc::CLOCK_UPTIME_RAW), false);
+        add_wrapped_fn!(fns, plat_apple::gettime_nsec_np_clock, plat_apple::gettime_nsec_np_clock_calibrate, Some(libc::CLOCK_REALTIME), false);
         add_wrapped_fn!(fns, plat_apple::gettime_nsec_np_clock, plat_apple::gettime_nsec_np_clock_calibrate, Some(libc::CLOCK_MONOTONIC), false);
         add_wrapped_fn!(fns, plat_apple::gettime_nsec_np_clock, plat_apple::gettime_nsec_np_clock_calibrate, Some(libc::CLOCK_MONOTONIC_RAW), false);
+        add_wrapped_fn!(fns, plat_apple::gettime_nsec_np_clock, plat_apple::gettime_nsec_np_clock_calibrate, Some(libc::CLOCK_MONOTONIC_RAW_APPROX), false);
+        add_wrapped_fn!(fns, plat_apple::gettime_nsec_np_clock, plat_apple::gettime_nsec_np_clock_calibrate, Some(libc::CLOCK_UPTIME_RAW), false);
+        add_wrapped_fn!(fns, plat_apple::gettime_nsec_np_clock, plat_apple::gettime_nsec_np_clock_calibrate, Some(libc::CLOCK_UPTIME_RAW_APPROX), false);
+        add_wrapped_fn!(fns, plat_apple::gettime_nsec_np_clock, plat_apple::gettime_nsec_np_clock_calibrate, Some(libc::CLOCK_PROCESS_CPUTIME_ID), false);
+        add_wrapped_fn!(fns, plat_apple::gettime_nsec_np_clock, plat_apple::gettime_nsec_np_clock_calibrate, Some(libc::CLOCK_THREAD_CPUTIME_ID), false);
     }
 #[cfg(target_arch = "x86_64")]
     add_wrapped_fn!(fns, plat_x86_64::rdtscp, plat_x86_64::rdtscp_calibrate, None, true);
@@ -584,8 +633,8 @@ fn main() {
 
 
 //    println!("iters: {}", iters.separate_with_commas());
-    println!("{:>38} {:>14} {:>12} {:>7} {:>7} {:>11} {:>7} {:>14} {:>11} {:>12}", "fnname", "clock", "nsamples", "min", "perc50", "mean", "perc95", "max", "stddev", "drift");
-    println!("{:>38} {:>14} {:>12} {:>7} {:>7} {:>11} {:>7} {:>14} {:>11} {:>12}", "------", "-----", "--------", "---", "------", "----", "------", "---", "------", "-----");
+    println!("{:>38} {:>21} {:>13} {:>7} {:>7} {:>11} {:>10} {:>17} {:>13} {:>10}", "fnname", "clock", "nsamples", "min", "perc50", "mean", "perc95", "max", "stddev", "drift");
+    println!("{:>38} {:>21} {:>13} {:>7} {:>7} {:>11} {:>10} {:>17} {:>13} {:>10}", "------", "-----", "--------", "---", "------", "----", "------", "---", "------", "-----");
 
     let args: Vec<String> = env::args().collect();
 
@@ -605,12 +654,24 @@ fn main() {
     }
 
     if args.contains(&"--clockjumpahead".to_string()) {
-        thread::spawn(|| {
-            jump_clock_ahead_thread();
+        let should_exit = Arc::new(AtomicBool::new(false));
+
+        let should_exit_clone = Arc::clone(&should_exit);
+        let jumperhandle = thread::spawn(|| {
+            jump_clock_ahead_thread(should_exit_clone);
         });
+
+        for handle in clockmeasurementhandles {
+            handle.join().unwrap();
+        }
+
+        should_exit.store(true, Ordering::Relaxed);
+
+        jumperhandle.join().unwrap();
+    } else {
+        for handle in clockmeasurementhandles {
+            handle.join().unwrap();
+        }
     }
 
-    for handle in clockmeasurementhandles {
-        handle.join().unwrap();
-    }
 }
